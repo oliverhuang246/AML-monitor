@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>竞品情报 - KYT 监控平台</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>竞品情报</h2>
+      <div class="sidebar-subtitle" id="totalCount">正在读取数据</div>
+    </div>
+
+    <div class="refresh-section">
+      <button id="refreshBtn" onclick="refreshData()" type="button">
+        <span aria-hidden="true">↻</span>
+        <span>刷新动态</span>
+      </button>
+      <div class="data-info" id="dataInfo">数据准备中</div>
+    </div>
+
+    <nav class="competitors-list" id="competitorsList" aria-label="竞品列表"></nav>
+  </aside>
+
+  <main class="main-content">
+    <header class="content-header">
+      <div class="title-row">
+        <div>
+          <h1 class="content-title" id="currentTitle">全部动态</h1>
+          <p class="content-subtitle" id="currentSubtitle">追踪竞品、链上风控和威胁情报来源的近七日公开动态</p>
+        </div>
+        <div class="header-metrics" aria-label="概览指标">
+          <div>
+            <span id="metricSources">0</span>
+            <small>数据源</small>
+          </div>
+          <div>
+            <span id="metricUpdates">0</span>
+            <small>近七日动态</small>
+          </div>
+        </div>
+      </div>
+
+      <label class="search-bar" for="searchInput">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input type="text" id="searchInput" placeholder="搜索标题或摘要" onkeyup="handleSearch()">
+      </label>
+    </header>
+
+    <div class="content-body">
+      <div id="loading">正在加载...</div>
+      <div id="updatesList" class="updates-list"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

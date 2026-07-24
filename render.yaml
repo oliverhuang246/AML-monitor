@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: kyt-monitor
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: USE_MOCK_DATA
+        value: false
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /

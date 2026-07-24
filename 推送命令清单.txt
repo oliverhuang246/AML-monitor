@@ -1,0 +1,65 @@
+===========================================
+Git 推送命令清单 - 直接复制粘贴
+===========================================
+
+第一步：配置 Git（只需要做一次）
+-------------------------------------------
+git config --global user.name "你的名字"
+git config --global user.email "你的邮箱"
+
+
+第二步：推送代码到 GitHub
+-------------------------------------------
+# 1. 进入项目目录
+cd C:\Users\admin\Desktop\KYT1
+
+# 2. 初始化
+git init
+
+# 3. 添加文件
+git add .
+
+# 4. 提交
+git commit -m "Initial commit"
+
+# 5. 添加远程仓库（替换你的用户名）
+git remote add origin https://github.com/你的用户名/KYT1.git
+
+# 6. 推送
+git branch -M main
+git push -u origin main
+
+
+第三步：以后更新代码
+-------------------------------------------
+cd C:\Users\admin\Desktop\KYT1
+git add .
+git commit -m "Update"
+git push
+
+
+===========================================
+Render 配置信息
+===========================================
+
+Build Command: npm install
+Start Command: npm start
+
+Environment Variables:
+- USE_MOCK_DATA = false
+- NODE_VERSION = 18
+
+
+===========================================
+重要链接
+===========================================
+
+下载 Git: https://git-scm.com/download/win
+GitHub: https://github.com
+Render: https://render.com
+UptimeRobot: https://uptimerobot.com
+
+
+===========================================
+详细步骤请查看：零基础Git推送指南.md
+===========================================
