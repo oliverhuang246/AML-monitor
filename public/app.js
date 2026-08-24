@@ -240,15 +240,23 @@ function handleSearch() {
 async function refreshData() {
   const btn = document.getElementById('refreshBtn');
   const originalHTML = btn.innerHTML;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
   btn.disabled = true;
   btn.innerHTML = '<span>⏳</span><span>刷新中</span>';
 
   try {
-    await fetch('/api/refresh', { method: 'POST' });
+    const response = await fetch('/api/refresh', {
+      method: 'POST',
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error('刷新失败');
     await loadData();
     btn.innerHTML = '<span>✓</span><span>已刷新</span>';
   } catch (error) {
-    btn.innerHTML = '<span>!</span><span>刷新失败</span>';
+    btn.innerHTML = `<span>!</span><span>${error.name === 'AbortError' ? '刷新超时' : '刷新失败'}</span>`;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   setTimeout(() => {

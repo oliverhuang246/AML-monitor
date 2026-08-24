@@ -69,6 +69,16 @@ function parseDateValue(value) {
   return isValidDate(direct) ? direct.toISOString() : null;
 }
 
+async function loadExistingData() {
+  try {
+    const dataPath = path.join(__dirname, '../data/competitors.json');
+    const rawData = await fs.readFile(dataPath, 'utf-8');
+    return JSON.parse(rawData);
+  } catch {
+    return {};
+  }
+}
+
 function extractPublishedDate($, $elem, selectors = {}) {
   const dateSelector = selectors.date || [
     'time',
@@ -234,6 +244,7 @@ async function fetchTwitter(username) {
 async function fetchAllData() {
   console.log('开始抓取真实竞品数据...\n');
   const results = {};
+  const existingData = await loadExistingData();
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - config.dataRetentionDays);
 
@@ -289,13 +300,25 @@ async function fetchAllData() {
       })
       .slice(0, PER_COMPETITOR_LIMIT);
 
+    const existingCompetitor = existingData[competitor.name];
+    const existingUpdates = Array.isArray(existingCompetitor?.updates) ? existingCompetitor.updates : [];
+    const updatesToSave = filteredData.length > 0 ? filteredData : existingUpdates;
+
+    if (filteredData.length === 0 && existingUpdates.length > 0) {
+      console.log(`  本次未抓到新数据，保留已有 ${existingUpdates.length} 条动态`);
+    }
+
     results[competitor.name] = {
       ...competitor,
-      updates: filteredData,
-      lastUpdated: new Date().toISOString()
+      updates: updatesToSave,
+      lastUpdated: filteredData.length > 0
+        ? new Date().toISOString()
+        : existingCompetitor?.lastUpdated || new Date().toISOString(),
+      lastRefreshAttempted: new Date().toISOString(),
+      lastRefreshStatus: filteredData.length > 0 ? 'updated' : 'kept-existing'
     };
 
-    console.log(`  合计：${filteredData.length} 条近 ${config.dataRetentionDays} 天动态\n`);
+    console.log(`  合计：${updatesToSave.length} 条近 ${config.dataRetentionDays} 天动态\n`);
   }
 
   const dataDir = path.join(__dirname, '../data');
