@@ -43,12 +43,19 @@ function isValidDate(date) {
   return date instanceof Date && !Number.isNaN(date.getTime());
 }
 
+function isRecentItem(item, cutoffDate) {
+  if (!item.date) return false;
+  const itemDate = new Date(item.date);
+  return isValidDate(itemDate) && itemDate >= cutoffDate;
+}
+
 function parseDateValue(value) {
   const text = cleanText(value, 1000);
   if (!text) return null;
 
   const patterns = [
-    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+\d{4}\b/i,
+    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+\d{4}(?=\D|$)/i,
+    /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}\s+\d{4}(?=\D|$)/i,
     /\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/,
     /\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b/,
     /\b\d{8}\b/
@@ -119,6 +126,71 @@ function extractPublishedDate($, $elem, selectors = {}) {
   return null;
 }
 
+function titleFromCardText(text, dateText) {
+  let title = cleanText(text, 220);
+  if (dateText) {
+    title = cleanText(title.replace(dateText, ''), 220);
+  }
+
+  const categories = [
+    'Security Insights',
+    'Knowledge',
+    'Research',
+    'Incident Analysis',
+    'Policy Pulse',
+    'Technical Insights',
+    'Educational',
+    'Company Updates',
+    'Announcements',
+    'Products & Services',
+    'Ecosystem Analysis',
+    'New'
+  ];
+
+  for (const category of categories) {
+    if (title.startsWith(category)) {
+      title = cleanText(title.slice(category.length), 220);
+    }
+  }
+
+  return shortenTitle(title);
+}
+
+function extractDatedLinkCards($, url, selectors = {}) {
+  const linkPattern = selectors.linkPattern || /\/(blog|news|newsroom|research|resources)\//i;
+  const cards = [];
+  const seen = new Set();
+
+  $('a[href]').each((_, node) => {
+    if (cards.length >= PER_SOURCE_LIMIT) return;
+
+    const $link = $(node);
+    const rawLink = $link.attr('href');
+    const link = normalizeLink(rawLink, url);
+    const text = cleanText($link.text(), 700);
+    const parsedDate = parseDateValue(text);
+
+    if (!link || seen.has(link) || !linkPattern.test(link) || !parsedDate || text.length < 20) {
+      return;
+    }
+
+    seen.add(link);
+    const dateTextMatch = text.match(/(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,)?\s+\d{4}(?=\D|$)/i);
+    const dateText = dateTextMatch ? dateTextMatch[0] : '';
+
+    cards.push({
+      title: titleFromCardText(text, dateText),
+      summary: cleanText(text.replace(dateText, ''), 260),
+      link,
+      date: parsedDate,
+      source: 'Website',
+      sourceName: '官网'
+    });
+  });
+
+  return cards;
+}
+
 function isRetweetOrReply(content, title) {
   if (!content && !title) return false;
   const text = `${content || ''} ${title || ''}`.toLowerCase();
@@ -164,6 +236,7 @@ async function fetchWebsite(url, selectors = {}) {
 
     const articles = [];
     const seen = new Set();
+    const datedLinkCards = extractDatedLinkCards($, url, selectors);
     const elements = $(articleSelector).slice(0, PER_SOURCE_LIMIT * 3);
 
     for (let i = 0; i < elements.length && articles.length < PER_SOURCE_LIMIT; i++) {
@@ -185,7 +258,9 @@ async function fetchWebsite(url, selectors = {}) {
       });
     }
 
-    return articles;
+    return Array.from(
+      new Map([...datedLinkCards, ...articles].map((item) => [item.link, item])).values()
+    ).slice(0, PER_SOURCE_LIMIT);
   } catch (error) {
     console.log(`  官网抓取失败：${url} (${error.message})`);
     return [];
@@ -287,10 +362,7 @@ async function fetchAllData() {
     );
 
     const filteredData = uniqueData
-      .filter((item) => {
-        const itemDate = new Date(item.date);
-        return !item.date || !isValidDate(itemDate) || itemDate >= cutoffDate;
-      })
+      .filter((item) => isRecentItem(item, cutoffDate))
       .sort((a, b) => {
         const aDate = new Date(a.date);
         const bDate = new Date(b.date);
@@ -302,10 +374,20 @@ async function fetchAllData() {
 
     const existingCompetitor = existingData[competitor.name];
     const existingUpdates = Array.isArray(existingCompetitor?.updates) ? existingCompetitor.updates : [];
-    const updatesToSave = filteredData.length > 0 ? filteredData : existingUpdates;
+    const existingRecentUpdates = existingUpdates.filter((item) => isRecentItem(item, cutoffDate));
+    const mergedRecentUpdates = Array.from(
+      new Map([...filteredData, ...existingRecentUpdates].filter((item) => item.link).map((item) => [item.link, item])).values()
+    )
+      .sort((a, b) => {
+        const aDate = new Date(a.date);
+        const bDate = new Date(b.date);
+        return bDate.getTime() - aDate.getTime();
+      })
+      .slice(0, PER_COMPETITOR_LIMIT);
+    const updatesToSave = mergedRecentUpdates.length > 0 ? mergedRecentUpdates : existingRecentUpdates;
 
-    if (filteredData.length === 0 && existingUpdates.length > 0) {
-      console.log(`  本次未抓到新数据，保留已有 ${existingUpdates.length} 条动态`);
+    if (filteredData.length === 0 && existingRecentUpdates.length > 0) {
+      console.log(`  本次未抓到新数据，保留已有 ${existingRecentUpdates.length} 条有效动态`);
     }
 
     results[competitor.name] = {
