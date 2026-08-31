@@ -8,8 +8,7 @@ const sourceLabels = {
   Blog: '博客/RSS',
   Website: '官网',
   RSS: 'RSS订阅',
-  LinkedIn: 'LinkedIn',
-  WeChat: '公众号'
+  LinkedIn: 'LinkedIn'
 };
 
 const sourceIcons = {
@@ -17,8 +16,7 @@ const sourceIcons = {
   Blog: '博客',
   Website: '官网',
   RSS: 'RSS',
-  LinkedIn: 'in',
-  WeChat: '公众号'
+  LinkedIn: 'in'
 };
 
 async function loadData() {
@@ -50,7 +48,7 @@ function getRecentUpdates(competitor) {
 
   return (competitor?.updates || []).filter((update) => {
     const updateDate = new Date(update.date);
-    return Number.isNaN(updateDate.getTime()) || updateDate >= cutoff;
+    return !Number.isNaN(updateDate.getTime()) && updateDate >= cutoff;
   });
 }
 
@@ -241,7 +239,7 @@ async function refreshData() {
   const btn = document.getElementById('refreshBtn');
   const originalHTML = btn.innerHTML;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  const timeoutId = setTimeout(() => controller.abort(), 180000);
   btn.disabled = true;
   btn.innerHTML = '<span>⏳</span><span>刷新中</span>';
 

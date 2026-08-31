@@ -1,3 +1,4 @@
+require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
 const Parser = require('rss-parser');
@@ -8,6 +9,18 @@ const { getAxiosConfig, getProxyAgent } = require('./fetchWithProxy');
 
 const PER_SOURCE_LIMIT = Number(process.env.PER_SOURCE_LIMIT || 12);
 const PER_COMPETITOR_LIMIT = Number(process.env.PER_COMPETITOR_LIMIT || 30);
+const USE_RSSHUB_X = process.env.USE_RSSHUB_X === 'true';
+const RSSHUB_BASE_URL = (process.env.RSSHUB_BASE_URL || '').replace(/\/+$/, '');
+const DEFAULT_NITTER_MIRRORS = [
+  'https://nitter.perennialte.ch',
+  'https://nitter.poast.org',
+  'https://nitter.tiekoetter.com',
+  'https://nitter.space',
+  'https://nitter.privacyredirect.com',
+  'https://nitter.privacydev.net',
+  'https://nitter.net'
+];
+const X_FEED_TIMEOUT_MS = Number(process.env.X_FEED_TIMEOUT_MS || 12000);
 
 const parser = new Parser({
   requestOptions: getProxyAgent() ? {
@@ -39,8 +52,68 @@ function normalizeLink(link, baseUrl) {
   return link.startsWith('/') ? `${base.origin}${link}` : `${base.origin}/${link}`;
 }
 
+function parseList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+}
+
+function getNitterMirrors() {
+  const configuredMirrors = parseList(process.env.X_NITTER_INSTANCES);
+  return configuredMirrors.length > 0 ? configuredMirrors : DEFAULT_NITTER_MIRRORS;
+}
+
+async function parseFeedURL(url, options = {}) {
+  const { data } = await axios.get(new URL(url).href, {
+    ...getAxiosConfig(),
+    timeout: options.timeout || getAxiosConfig().timeout,
+    responseType: 'text',
+    transformResponse: [(value) => value]
+  });
+
+  return parser.parseString(data);
+}
+
 function isValidDate(date) {
   return date instanceof Date && !Number.isNaN(date.getTime());
+}
+
+function dateFromOffset(amount, unit) {
+  const date = new Date();
+  const normalizedUnit = unit.toLowerCase();
+
+  if (['m', 'min', 'mins', 'minute', 'minutes'].includes(normalizedUnit)) {
+    date.setMinutes(date.getMinutes() - amount);
+  } else if (['h', 'hr', 'hrs', 'hour', 'hours'].includes(normalizedUnit)) {
+    date.setHours(date.getHours() - amount);
+  } else if (['d', 'day', 'days'].includes(normalizedUnit)) {
+    date.setDate(date.getDate() - amount);
+  } else if (['w', 'wk', 'wks', 'week', 'weeks'].includes(normalizedUnit)) {
+    date.setDate(date.getDate() - amount * 7);
+  } else if (['mo', 'mos', 'month', 'months'].includes(normalizedUnit)) {
+    date.setMonth(date.getMonth() - amount);
+  } else if (['y', 'yr', 'yrs', 'year', 'years'].includes(normalizedUnit)) {
+    date.setFullYear(date.getFullYear() - amount);
+  } else {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
+function parseRelativeDateValue(text) {
+  const normalized = cleanText(text, 1000);
+  if (!normalized) return null;
+
+  if (/\b(just now|today)\b/i.test(normalized)) {
+    return new Date().toISOString();
+  }
+
+  const match = normalized.match(/\b(\d{1,2})\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)\b/i);
+  if (!match) return null;
+
+  return dateFromOffset(Number(match[1]), match[2]);
 }
 
 function isRecentItem(item, cutoffDate) {
@@ -204,9 +277,76 @@ function isRetweetOrReply(content, title) {
   );
 }
 
+function buildTwitterItem(item, fallbackLinkPrefix = 'https://twitter.com') {
+  const content = item.contentSnippet || item.content || '';
+  const title = item.title || '';
+  if (isRetweetOrReply(content, title)) return null;
+
+  const firstTweet = content.split(/\n\n/)[0].trim();
+  const rawLink = item.link || '';
+  const link = rawLink
+    ? rawLink.replace(/^https?:\/\/[^/]+/, fallbackLinkPrefix)
+    : fallbackLinkPrefix;
+
+  return {
+    title: shortenTitle(title || firstTweet),
+    summary: cleanText(firstTweet, 220),
+    link,
+    date: item.pubDate || item.isoDate || new Date().toISOString(),
+    source: 'Twitter',
+    sourceName: 'Twitter/X'
+  };
+}
+
+function isBlockedTwitterFeed(feed) {
+  const text = [
+    feed?.title,
+    feed?.description,
+    ...(feed?.items || []).flatMap((item) => [item.title, item.contentSnippet, item.content])
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    text.includes('rss reader not yet whitelisted') ||
+    text.includes('instance has been rate limited') ||
+    text.includes('could not load') ||
+    text.includes('cease and desist') ||
+    text.includes('service xcancel is stopped')
+  );
+}
+
+async function fetchTwitterFromRSSHub(username) {
+  if (!USE_RSSHUB_X || !RSSHUB_BASE_URL) return [];
+
+  const route = `${RSSHUB_BASE_URL}/twitter/user/${username}`;
+
+  try {
+    const feed = await parseFeedURL(route, { timeout: X_FEED_TIMEOUT_MS });
+    const items = [];
+
+    for (const item of feed.items.slice(0, PER_SOURCE_LIMIT * 2)) {
+      const twitterItem = buildTwitterItem(item);
+      if (!twitterItem) continue;
+      items.push(twitterItem);
+      if (items.length >= PER_SOURCE_LIMIT) break;
+    }
+
+    if (items.length > 0) {
+      console.log(`  Twitter/X RSSHub：${items.length} 条`);
+    }
+
+    return items;
+  } catch (error) {
+    console.log(`  Twitter/X RSSHub 抓取失败：@${username} (${error.message})`);
+    return [];
+  }
+}
+
 async function fetchRSS(url) {
   try {
-    const feed = await parser.parseURL(new URL(url).href);
+    const feed = await parseFeedURL(url);
     return feed.items.slice(0, PER_SOURCE_LIMIT).map((item) => {
       const content = item.contentSnippet || item.content || item.summary || item.description || '';
       return {
@@ -277,36 +417,31 @@ async function fetchWebsiteSource(sourceConfig) {
 }
 
 async function fetchTwitter(username) {
-  const mirrors = [
-    'https://nitter.poast.org',
-    'https://nitter.privacydev.net',
-    'https://nitter.net'
-  ];
+  const rsshubData = await fetchTwitterFromRSSHub(username);
+  if (rsshubData.length > 0) return rsshubData;
+
+  const mirrors = getNitterMirrors();
 
   for (const mirror of mirrors) {
     try {
-      const feed = await parser.parseURL(`${mirror}/${username}/rss`);
+      const feed = await parseFeedURL(`${mirror}/${username}/rss`, { timeout: X_FEED_TIMEOUT_MS });
+      if (isBlockedTwitterFeed(feed)) continue;
+
       const items = [];
 
       for (const item of feed.items.slice(0, PER_SOURCE_LIMIT * 2)) {
-        const content = item.contentSnippet || item.content || '';
-        const title = item.title || '';
-        if (isRetweetOrReply(content, title)) continue;
-
-        const firstTweet = content.split(/\n\n/)[0].trim();
-        items.push({
-          title: shortenTitle(title || firstTweet),
-          summary: cleanText(firstTweet, 220),
-          link: item.link.replace(mirror, 'https://twitter.com'),
-          date: item.pubDate || item.isoDate || new Date().toISOString(),
-          source: 'Twitter',
-          sourceName: 'Twitter/X'
-        });
+        const twitterItem = buildTwitterItem(item);
+        if (!twitterItem) continue;
+        items.push(twitterItem);
 
         if (items.length >= PER_SOURCE_LIMIT) break;
       }
 
-      return items;
+      if (items.length > 0) {
+        console.log(`  Twitter/X 镜像：${items.length} 条 (${mirror})`);
+        return items;
+      }
+
     } catch (error) {
       continue;
     }
@@ -316,10 +451,68 @@ async function fetchTwitter(username) {
   return [];
 }
 
+function cleanLinkedInText(text) {
+  return cleanText(
+    text
+      .replace(/LinkedIn and 3rd parties use essential and non-essential cookies[\s\S]*/i, '')
+      .replace(/\b(follow|followers|likes?|comments?|reposts?|share|sign in|join now)\b/gi, ' '),
+    320
+  );
+}
+
+async function fetchLinkedIn(url) {
+  if (!url) return [];
+
+  try {
+    const { data } = await axios.get(url, getAxiosConfig());
+    const $ = cheerio.load(data);
+    const items = [];
+    const seen = new Set();
+    const selectors = [
+      '.profile-creator-shared-feed-update__container',
+      '.feed-shared-update-v2',
+      '[class*="feed-update"]',
+      '[class*="update"]'
+    ].join(', ');
+
+    $(selectors).each((_, node) => {
+      if (items.length >= PER_SOURCE_LIMIT) return;
+
+      const $node = $(node);
+      const rawText = cleanLinkedInText($node.text());
+      const date = parseRelativeDateValue(rawText) || parseDateValue(rawText);
+      if (!rawText || !date) return;
+
+      const rawLink = $node
+        .find('a[href*="/posts/"], a[href*="/feed/update/"], a[href*="activity-"]')
+        .first()
+        .attr('href');
+      const link = rawLink ? normalizeLink(rawLink.split('?')[0], url) : url;
+      const uniqueKey = `${link}:${rawText.slice(0, 80)}`;
+      if (seen.has(uniqueKey)) return;
+      seen.add(uniqueKey);
+
+      items.push({
+        title: shortenTitle(rawText),
+        summary: rawText,
+        link,
+        date,
+        source: 'LinkedIn',
+        sourceName: 'LinkedIn'
+      });
+    });
+
+    return items;
+  } catch (error) {
+    console.log(`  LinkedIn 抓取失败：${url} (${error.message})`);
+    return [];
+  }
+}
+
 async function fetchAllData() {
   console.log('开始抓取真实竞品数据...\n');
   const results = {};
-  const existingData = await loadExistingData();
+  const existingData = process.env.IGNORE_EXISTING_DATA === 'true' ? {} : await loadExistingData();
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - config.dataRetentionDays);
 
@@ -337,6 +530,12 @@ async function fetchAllData() {
       const twitterData = await fetchTwitter(competitor.twitter);
       data.push(...twitterData);
       if (twitterData.length > 0) console.log(`  Twitter/X：${twitterData.length} 条`);
+    }
+
+    if (competitor.linkedin) {
+      const linkedinData = await fetchLinkedIn(competitor.linkedin);
+      data.push(...linkedinData);
+      if (linkedinData.length > 0) console.log(`  LinkedIn：${linkedinData.length} 条`);
     }
 
     const websiteSources = [];

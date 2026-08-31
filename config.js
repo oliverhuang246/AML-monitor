@@ -8,6 +8,7 @@ module.exports = {
       websiteSourceName: '官网博客',
       rss: 'https://flashpoint.io/feed',
       twitter: 'FlashpointIntel',
+      linkedin: 'https://www.linkedin.com/company/flashpoint-intel',
       category: '威胁情报',
       selectors: {
         article: 'article, .blog-post, .post-item, [class*="blog"], [class*="post"]',
@@ -23,6 +24,7 @@ module.exports = {
       website: 'https://www.caci.com/darkblue',
       websiteSourceName: '官网动态',
       twitter: 'CACIIntl',
+      linkedin: 'https://www.linkedin.com/company/caci-international-inc',
       category: '开源情报',
       selectors: {
         article: 'article, .views-row, .card, [class*="news"], [class*="article"]',
@@ -37,6 +39,7 @@ module.exports = {
       homepage: 'https://www.stealthmole.com',
       rss: 'https://stealthmole-intelligence-hub.blogspot.com/feeds/posts/default',
       twitter: 'stealthmole_int',
+      linkedin: 'https://www.linkedin.com/company/stealthmole',
       category: '暗网监测'
     },
     {
@@ -46,6 +49,7 @@ module.exports = {
       websiteSourceName: '官网博客',
       rss: 'https://www.chainalysis.com/blog/feed/',
       twitter: 'chainalysis',
+      linkedin: 'https://www.linkedin.com/company/chainalysis',
       category: '区块链分析',
       selectors: {
         article: 'article, .post, .card, [class*="blog"], [class*="post"]',
@@ -58,10 +62,10 @@ module.exports = {
     {
       name: 'Elliptic',
       homepage: 'https://www.elliptic.co',
-      website: 'https://www.elliptic.co/blog',
-      websiteSourceName: '官网博客',
-      rss: 'https://www.elliptic.co/blog/rss.xml',
+      website: 'https://www.elliptic.co/insights',
+      websiteSourceName: '官网 Insights',
       twitter: 'elliptic',
+      linkedin: 'https://www.linkedin.com/company/ellipticco',
       category: '区块链分析'
     },
     {
@@ -71,6 +75,7 @@ module.exports = {
       websiteSourceName: '官网博客',
       rss: 'https://www.trmlabs.com/post/rss.xml',
       twitter: 'trmlabs',
+      linkedin: 'https://www.linkedin.com/company/trmlabs',
       category: '区块链分析',
       selectors: {
         article: 'article, .card, .post, [class*="blog"], [class*="post"], [class*="resource"]',
@@ -86,6 +91,7 @@ module.exports = {
       website: 'https://blocksec.com/blog',
       websiteSourceName: '官网博客',
       twitter: 'BlockSecTeam',
+      linkedin: 'https://www.linkedin.com/company/blocksec',
       category: '链上安全',
       selectors: {
         article: 'article, .post, .blog-card, .blog-item, [class*="blog"]',
@@ -101,25 +107,11 @@ module.exports = {
       website: 'https://peckshield.com',
       websiteSourceName: '官网',
       twitter: 'PeckShieldAlert',
+      linkedin: 'https://www.linkedin.com/company/peckshield',
       category: '链上安全预警',
       selectors: {
         article: 'article, .card, .news, .post, [class*="news"], [class*="post"], [class*="blog"]',
         title: 'h2, h3, a, [class*="title"]',
-        link: 'a',
-        excerpt: 'p, [class*="summary"], [class*="description"]',
-        date: 'time, [class*="date"], [class*="meta"]'
-      }
-    },
-    {
-      name: 'Scam Sniffer',
-      homepage: 'https://www.scamsniffer.io',
-      website: 'https://www.scamsniffer.io',
-      websiteSourceName: '官网研究',
-      twitter: 'realScamSniffer',
-      category: '钓鱼与钱包欺诈',
-      selectors: {
-        article: 'article, .card, .post, [class*="blog"], [class*="post"], [class*="research"]',
-        title: 'h2, h3, [class*="title"]',
         link: 'a',
         excerpt: 'p, [class*="summary"], [class*="description"]',
         date: 'time, [class*="date"], [class*="meta"]'
@@ -131,6 +123,7 @@ module.exports = {
       website: 'https://www.certik.com/blog',
       websiteSourceName: '官网博客',
       twitter: 'CertiKAlert',
+      linkedin: 'https://www.linkedin.com/company/certik',
       category: '链上安全与审计',
       selectors: {
         article: 'article, .blog-card, .post, [class*="article"], [class*="blog"]',
@@ -146,6 +139,7 @@ module.exports = {
       website: 'https://ofac.treasury.gov/recent-actions',
       websiteSourceName: '官网公告',
       twitter: null,
+      linkedin: null,
       category: '制裁与监管',
       selectors: {
         article: '.view-content .views-row, article, .card, .usa-collection__item',
@@ -162,12 +156,47 @@ module.exports = {
       websiteSourceName: 'Medium 博客',
       rss: 'https://slowmist.medium.com/feed',
       twitter: 'SlowMist_Team',
+      linkedin: 'https://www.linkedin.com/company/slowmist',
       category: '区块链安全',
       selectors: {
         article: 'article, .post',
         title: 'h1, h2, h3',
         link: 'a',
         date: 'time, [datetime], [class*="date"]'
+      }
+    },
+    {
+      name: 'Merkle Science',
+      homepage: 'https://www.merklescience.com',
+      website: 'https://www.merklescience.com/resources',
+      websiteSourceName: '官网博客',
+      twitter: 'MerkleScience',
+      linkedin: 'https://www.linkedin.com/company/merklescience',
+      category: '区块链分析与合规',
+      selectors: {
+        article: 'article, .blog-card, .post, [class*="blog"], [class*="post"], [class*="card"]',
+        title: 'h1, h2, h3, [class*="title"]',
+        link: 'a',
+        excerpt: 'p, [class*="summary"], [class*="description"], [class*="excerpt"]',
+        date: 'time, [datetime], [class*="date"], [class*="meta"]',
+        linkPattern: /\/resources\//i
+      }
+    },
+    {
+      name: 'Beosin',
+      homepage: 'https://www.beosin.com',
+      website: 'https://www.beosin.com/resources/',
+      websiteSourceName: '官网博客',
+      twitter: 'Beosin_com',
+      linkedin: 'https://www.linkedin.com/company/beosin-blockchain-security',
+      category: '区块链安全与合规',
+      selectors: {
+        article: 'article, .card, .post, [class*="resource"], [class*="blog"], [class*="news"]',
+        title: 'h1, h2, h3, [class*="title"]',
+        link: 'a',
+        excerpt: 'p, [class*="summary"], [class*="description"], [class*="excerpt"]',
+        date: 'time, [datetime], [class*="date"], [class*="meta"]',
+        linkPattern: /\/resources\//i
       }
     }
   ],

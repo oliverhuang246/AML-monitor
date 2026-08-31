@@ -15,7 +15,7 @@ const mockArticles = [
     summary: 'The weekly review highlights ransomware payments, darknet marketplace settlements and mixer-related exposure across several chains.',
     days: 2,
     source: 'Blog',
-    sourceName: '博客'
+    sourceName: '官网博客'
   },
   {
     title: 'Product Update: AML Coverage Expands to More Cross-chain Entities',
@@ -28,22 +28,22 @@ const mockArticles = [
     title: 'Research Note: Phishing Kits Target Wallet Approval Flows',
     summary: 'Researchers observed phishing kits imitating wallet approval flows and draining assets after users signed malicious permissions.',
     days: 5,
-    source: 'WeChat',
-    sourceName: '公众号'
+    source: 'Blog',
+    sourceName: '官网博客'
   },
   {
     title: 'Regulatory Update: New Sanctions Guidance Published for Digital Assets',
     summary: 'The guidance reminds compliance teams to review sanctions screening coverage, blocked address handling and escalation procedures.',
     days: 6,
-    source: 'Website',
-    sourceName: '官网'
+    source: 'Twitter',
+    sourceName: 'Twitter/X'
   },
   {
     title: 'AI Risk Scoring Adds Alert Triage for Security Operations',
     summary: 'The release focuses on automated alert triage, entity enrichment and suspicious pattern scoring for security and compliance workflows.',
-    days: 8,
-    source: 'RSS',
-    sourceName: 'RSS 订阅'
+    days: 7,
+    source: 'LinkedIn',
+    sourceName: 'LinkedIn'
   }
 ];
 
@@ -81,11 +81,7 @@ function buildMockLink(competitor, article, index) {
   }
 
   if (article.source === 'LinkedIn') {
-    return `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(competitor.name)}`;
-  }
-
-  if (article.source === 'WeChat') {
-    return `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(competitor.name)}`;
+    return competitor.linkedin || `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(competitor.name)}`;
   }
 
   return `${competitor.website}#article-${index}`;
