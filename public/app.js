@@ -237,11 +237,15 @@ function renderXStatus() {
     .filter(competitor => competitor?.twitter);
   panel.hidden = dataConfig.useMockData || competitors.length === 0;
   const ok = competitors.filter(competitor => competitor.xStatus?.state === 'ok').length;
+  const retained = competitors.filter(competitor =>
+    competitor.xStatus?.state !== 'ok' &&
+    getRecentUpdates(competitor).some(item => item.source === 'Twitter')
+  ).length;
   const checked = competitors.filter(competitor => competitor.xStatus).length;
   document.getElementById('xStatusSummary').textContent = checked
-    ? `X 来源状态 · 上次抓取 ${ok}/${competitors.length} 个账号取得近期内容`
+    ? `X 来源状态 · 上次抓取 ${ok}/${competitors.length} 个账号取得近期内容，已保留 ${retained} 个账号的历史 X 内容`
     : 'X 来源状态 · 尚未检查，请刷新动态';
-  const labels = { ok: '已取得近期内容', 'no-recent': '镜像未返回近期内容', unavailable: '暂时无法抓取' };
+  const labels = { ok: '已取得近期内容', 'no-recent': '未返回近期内容', unavailable: '暂时无法抓取' };
   document.getElementById('xStatusList').innerHTML = competitors.map(competitor => {
     const status = competitor.xStatus;
     const cached = getRecentUpdates(competitor).filter(item => item.source === 'Twitter').length;
@@ -252,8 +256,9 @@ function renderXStatus() {
     if (status?.state !== 'ok' && cached) notes.push(`保留 ${cached} 条近七日已获取内容`);
     const failures = (status?.attempts || []).filter(attempt => attempt.reason);
     if (failures.length) notes.push(failures.map(attempt => `${attempt.provider}：${attempt.reason}`).join('；'));
+    const label = status?.state !== 'ok' && cached ? '已保留历史近期内容' : labels[status?.state] || '尚未检查，请刷新动态';
     return `<div class="x-status-row">
-      <div><strong>${escapeHtml(competitor.name)}</strong><span class="x-status-label">${escapeHtml(labels[status?.state] || '尚未检查，请刷新动态')}</span></div>
+      <div><strong>${escapeHtml(competitor.name)}</strong><span class="x-status-label">${escapeHtml(label)}</span></div>
       ${notes.length ? `<p>${escapeHtml(notes.join(' · '))}</p>` : ''}
     </div>`;
   }).join('');

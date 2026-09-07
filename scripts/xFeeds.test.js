@@ -10,8 +10,24 @@ const post = (date = '2026-09-05T12:00:00Z') => ({
 });
 const options = {
   now: () => now, buildItem: buildTwitterItem, isBlocked: isBlockedTwitterFeed,
-  env: { X_NITTER_INSTANCES: 'https://first.example,https://second.example' }
+  env: { X_DIRECT_FEED_URLS: '', X_NITTER_INSTANCES: 'https://first.example,https://second.example' }
 };
+
+test('free direct X feed is used before nitter mirrors', async () => {
+  const calls = [];
+  const fetchX = createXFetcher({
+    ...options,
+    env: { X_NITTER_INSTANCES: 'https://mirror.example' },
+    parseFeed: async url => {
+      calls.push(url);
+      return { items: [post()] };
+    }
+  });
+  const result = await fetchX('account');
+  assert.equal(calls[0], 'https://fxtwitter.com/account/feed.xml');
+  assert.equal(result.status.provider, 'fxtwitter.com');
+  assert.equal(result.items[0].link, 'https://x.com/account/status/123456789');
+});
 
 test('stale first mirror does not hide recent posts from the fallback', async () => {
   const calls = [];

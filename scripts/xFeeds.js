@@ -1,3 +1,7 @@
+const DEFAULT_DIRECT_FEEDS = [
+  'https://fxtwitter.com/{username}/feed.xml'
+];
+
 const DEFAULT_MIRRORS = [
   'https://nitter.perennialte.ch',
   'https://nitter.poast.org',
@@ -18,13 +22,47 @@ function failureReason(error) {
   return '返回内容不是有效订阅';
 }
 
+function splitList(value) {
+  return String(value || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function hasOwn(env, key) {
+  return Object.prototype.hasOwnProperty.call(env, key);
+}
+
+function makeTemplateSource(template, username) {
+  const url = template.includes('{username}')
+    ? template.replaceAll('{username}', encodeURIComponent(username))
+    : `${template.replace(/\/+$/, '')}/${encodeURIComponent(username)}/feed.xml`;
+  let base = url;
+  try { base = new URL(url).origin; } catch {}
+  return { base, url, kind: 'direct' };
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function shouldSkipHost(error, source) {
+  const status = error.response?.status;
+  if (status === 404) return false;
+  if (source.kind === 'direct' && !status) return false;
+  return true;
+}
+
 // Keep failing hosts out of the remaining requests in this refresh, not future refreshes.
 function createXFetcher({ parseFeed, buildItem, isBlocked, env = process.env, now = Date.now, limit = 12, days = 7 }) {
-  const configured = String(env.X_NITTER_INSTANCES || '').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
+  const directFeeds = hasOwn(env, 'X_DIRECT_FEED_URLS') ? splitList(env.X_DIRECT_FEED_URLS) : DEFAULT_DIRECT_FEEDS;
+  const configured = splitList(env.X_NITTER_INSTANCES).map(s => s.replace(/\/+$/, ''));
   const mirrors = configured.length ? [...new Set(configured)] : DEFAULT_MIRRORS;
   const unavailable = new Map();
   const configuredTimeout = Number(env.X_FEED_TIMEOUT_MS);
   const timeout = configuredTimeout > 0 ? Math.min(configuredTimeout, 20000) : 8000;
+  const configuredDelay = Number(env.X_FEED_DELAY_MS);
+  const directDelay = configuredDelay >= 0 ? Math.min(configuredDelay, 10000) : 1200;
+  const configuredRetries = Number(env.X_FEED_RETRIES);
+  const directRetries = configuredRetries >= 0 ? Math.min(configuredRetries, 3) : 1;
+  let lastDirectRequestAt = 0;
 
   return async function fetchX(username, previous = {}) {
     const attemptedAt = new Date(now()).toISOString();
@@ -32,13 +70,17 @@ function createXFetcher({ parseFeed, buildItem, isBlocked, env = process.env, no
     const attempts = [];
     let latestPublishedAt = null;
     let receivedFeed = false;
-    const sources = mirrors.map(base => ({ base, url: `${base}/${encodeURIComponent(username)}/rss` }));
+    const sources = [
+      ...directFeeds.map(template => makeTemplateSource(template, username)),
+      ...mirrors.map(base => ({ base, url: `${base}/${encodeURIComponent(username)}/rss`, kind: 'nitter' }))
+    ];
     if (env.USE_RSSHUB_X === 'true' && env.RSSHUB_BASE_URL) {
       const base = env.RSSHUB_BASE_URL.replace(/\/+$/, '');
-      sources.unshift({ base, url: `${base}/twitter/user/${encodeURIComponent(username)}` });
+      sources.unshift({ base, url: `${base}/twitter/user/${encodeURIComponent(username)}`, kind: 'rsshub' });
     }
 
-    for (const { base, url } of sources) {
+    for (const source of sources) {
+      const { base, url } = source;
       // Store only the hostname; custom feed URLs can contain private credentials.
       let provider;
       try { provider = new URL(base).hostname; } catch { continue; }
@@ -46,8 +88,16 @@ function createXFetcher({ parseFeed, buildItem, isBlocked, env = process.env, no
         attempts.push({ provider, state: 'skipped', reason: unavailable.get(base) });
         continue;
       }
-      try {
-        const feed = await parseFeed(url, { timeout });
+      const maxAttempts = source.kind === 'direct' ? directRetries + 1 : 1;
+      for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++) {
+        try {
+          if (source.kind === 'direct' && directDelay > 0) {
+            const elapsed = now() - lastDirectRequestAt;
+            if (elapsed < directDelay) await wait(directDelay - elapsed);
+            lastDirectRequestAt = now();
+          }
+
+          const feed = await parseFeed(url, { timeout });
         if (!Array.isArray(feed.items) || isBlocked(feed)) {
           unavailable.set(base, '来源返回拦截提示或无效订阅');
           attempts.push({ provider, state: 'failed', reason: unavailable.get(base) });
@@ -72,10 +122,20 @@ function createXFetcher({ parseFeed, buildItem, isBlocked, env = process.env, no
           };
         }
         // A reachable mirror may be stale. Try the next one before reporting no recent posts.
-      } catch (error) {
-        const reason = failureReason(error);
-        attempts.push({ provider, state: 'failed', reason });
-        if (error.response?.status !== 404) unavailable.set(base, reason);
+          break;
+        } catch (error) {
+          const reason = failureReason(error);
+          attempts.push({
+            provider,
+            state: attemptNumber < maxAttempts ? 'retrying' : 'failed',
+            reason: attemptNumber < maxAttempts ? `${reason}，准备重试` : reason
+          });
+          if (attemptNumber < maxAttempts) {
+            await wait(Math.min(500 * attemptNumber, 1500));
+            continue;
+          }
+          if (shouldSkipHost(error, source)) unavailable.set(base, reason);
+        }
       }
     }
     return {
