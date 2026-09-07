@@ -6,21 +6,10 @@ const fs = require('fs').promises;
 const path = require('path');
 const config = require('../config');
 const { getAxiosConfig, getProxyAgent } = require('./fetchWithProxy');
+const { createXFetcher } = require('./xFeeds');
 
 const PER_SOURCE_LIMIT = Number(process.env.PER_SOURCE_LIMIT || 12);
 const PER_COMPETITOR_LIMIT = Number(process.env.PER_COMPETITOR_LIMIT || 30);
-const USE_RSSHUB_X = process.env.USE_RSSHUB_X === 'true';
-const RSSHUB_BASE_URL = (process.env.RSSHUB_BASE_URL || '').replace(/\/+$/, '');
-const DEFAULT_NITTER_MIRRORS = [
-  'https://nitter.perennialte.ch',
-  'https://nitter.poast.org',
-  'https://nitter.tiekoetter.com',
-  'https://nitter.space',
-  'https://nitter.privacyredirect.com',
-  'https://nitter.privacydev.net',
-  'https://nitter.net'
-];
-const X_FEED_TIMEOUT_MS = Number(process.env.X_FEED_TIMEOUT_MS || 12000);
 
 const parser = new Parser({
   requestOptions: getProxyAgent() ? {
@@ -50,18 +39,6 @@ function normalizeLink(link, baseUrl) {
   if (link.startsWith('http')) return link;
   const base = new URL(baseUrl);
   return link.startsWith('/') ? `${base.origin}${link}` : `${base.origin}/${link}`;
-}
-
-function parseList(value) {
-  return String(value || '')
-    .split(',')
-    .map((item) => item.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-}
-
-function getNitterMirrors() {
-  const configuredMirrors = parseList(process.env.X_NITTER_INSTANCES);
-  return configuredMirrors.length > 0 ? configuredMirrors : DEFAULT_NITTER_MIRRORS;
 }
 
 async function parseFeedURL(url, options = {}) {
@@ -270,6 +247,7 @@ function isRetweetOrReply(content, title) {
 
   return (
     text.includes('rt @') ||
+    text.includes('rt by @') ||
     text.includes('retweeted') ||
     text.startsWith('r to @') ||
     text.includes('replying to @') ||
@@ -277,22 +255,24 @@ function isRetweetOrReply(content, title) {
   );
 }
 
-function buildTwitterItem(item, fallbackLinkPrefix = 'https://twitter.com') {
+function buildTwitterItem(item) {
   const content = item.contentSnippet || item.content || '';
   const title = item.title || '';
   if (isRetweetOrReply(content, title)) return null;
 
   const firstTweet = content.split(/\n\n/)[0].trim();
   const rawLink = item.link || '';
-  const link = rawLink
-    ? rawLink.replace(/^https?:\/\/[^/]+/, fallbackLinkPrefix)
-    : fallbackLinkPrefix;
+  const postPath = rawLink.match(/\/([A-Za-z0-9_]+)\/status\/(\d+)/);
+  if (!postPath) return null;
+  const link = `https://x.com/${postPath[1]}/status/${postPath[2]}`;
+  const date = item.isoDate || item.pubDate;
+  if (!date || !Number.isFinite(Date.parse(date))) return null;
 
   return {
     title: shortenTitle(title || firstTweet),
     summary: cleanText(firstTweet, 220),
     link,
-    date: item.pubDate || item.isoDate || new Date().toISOString(),
+    date: new Date(date).toISOString(),
     source: 'Twitter',
     sourceName: 'Twitter/X'
   };
@@ -315,33 +295,6 @@ function isBlockedTwitterFeed(feed) {
     text.includes('cease and desist') ||
     text.includes('service xcancel is stopped')
   );
-}
-
-async function fetchTwitterFromRSSHub(username) {
-  if (!USE_RSSHUB_X || !RSSHUB_BASE_URL) return [];
-
-  const route = `${RSSHUB_BASE_URL}/twitter/user/${username}`;
-
-  try {
-    const feed = await parseFeedURL(route, { timeout: X_FEED_TIMEOUT_MS });
-    const items = [];
-
-    for (const item of feed.items.slice(0, PER_SOURCE_LIMIT * 2)) {
-      const twitterItem = buildTwitterItem(item);
-      if (!twitterItem) continue;
-      items.push(twitterItem);
-      if (items.length >= PER_SOURCE_LIMIT) break;
-    }
-
-    if (items.length > 0) {
-      console.log(`  Twitter/X RSSHub：${items.length} 条`);
-    }
-
-    return items;
-  } catch (error) {
-    console.log(`  Twitter/X RSSHub 抓取失败：@${username} (${error.message})`);
-    return [];
-  }
 }
 
 async function fetchRSS(url) {
@@ -416,41 +369,6 @@ async function fetchWebsiteSource(sourceConfig) {
   }));
 }
 
-async function fetchTwitter(username) {
-  const rsshubData = await fetchTwitterFromRSSHub(username);
-  if (rsshubData.length > 0) return rsshubData;
-
-  const mirrors = getNitterMirrors();
-
-  for (const mirror of mirrors) {
-    try {
-      const feed = await parseFeedURL(`${mirror}/${username}/rss`, { timeout: X_FEED_TIMEOUT_MS });
-      if (isBlockedTwitterFeed(feed)) continue;
-
-      const items = [];
-
-      for (const item of feed.items.slice(0, PER_SOURCE_LIMIT * 2)) {
-        const twitterItem = buildTwitterItem(item);
-        if (!twitterItem) continue;
-        items.push(twitterItem);
-
-        if (items.length >= PER_SOURCE_LIMIT) break;
-      }
-
-      if (items.length > 0) {
-        console.log(`  Twitter/X 镜像：${items.length} 条 (${mirror})`);
-        return items;
-      }
-
-    } catch (error) {
-      continue;
-    }
-  }
-
-  console.log(`  Twitter/X 抓取失败：@${username}`);
-  return [];
-}
-
 function cleanLinkedInText(text) {
   return cleanText(
     text
@@ -509,16 +427,30 @@ async function fetchLinkedIn(url) {
   }
 }
 
-async function fetchAllData() {
+let activeFetch = null;
+
+function fetchAllData() {
+  if (!activeFetch) {
+    activeFetch = runFetchAllData().finally(() => { activeFetch = null; });
+  }
+  return activeFetch;
+}
+
+async function runFetchAllData() {
   console.log('开始抓取真实竞品数据...\n');
   const results = {};
   const existingData = process.env.IGNORE_EXISTING_DATA === 'true' ? {} : await loadExistingData();
+  const fetchTwitter = createXFetcher({
+    parseFeed: parseFeedURL, buildItem: buildTwitterItem, isBlocked: isBlockedTwitterFeed,
+    limit: PER_SOURCE_LIMIT, days: config.dataRetentionDays
+  });
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - config.dataRetentionDays);
 
   for (const competitor of config.competitors) {
     console.log(`抓取 ${competitor.name}...`);
     const data = [];
+    let xStatus;
 
     if (competitor.rss) {
       const rssData = await fetchRSS(competitor.rss);
@@ -527,9 +459,13 @@ async function fetchAllData() {
     }
 
     if (competitor.twitter) {
-      const twitterData = await fetchTwitter(competitor.twitter);
-      data.push(...twitterData);
-      if (twitterData.length > 0) console.log(`  Twitter/X：${twitterData.length} 条`);
+      const result = await fetchTwitter(competitor.twitter, existingData[competitor.name]?.xStatus);
+      data.push(...result.items);
+      xStatus = result.status;
+      console.log(`  Twitter/X：${result.items.length} 条 (${xStatus.state})`);
+      for (const attempt of xStatus.attempts) {
+        console.log(`    ${attempt.provider}: ${attempt.reason || attempt.state}`);
+      }
     }
 
     if (competitor.linkedin) {
@@ -575,7 +511,7 @@ async function fetchAllData() {
     const existingUpdates = Array.isArray(existingCompetitor?.updates) ? existingCompetitor.updates : [];
     const existingRecentUpdates = existingUpdates.filter((item) => isRecentItem(item, cutoffDate));
     const mergedRecentUpdates = Array.from(
-      new Map([...filteredData, ...existingRecentUpdates].filter((item) => item.link).map((item) => [item.link, item])).values()
+      new Map([...existingRecentUpdates, ...filteredData].filter((item) => item.link).map((item) => [item.link.replace(/^https?:\/\/(?:www\.)?twitter\.com\//, 'https://x.com/').replace(/#.*$/, ''), item])).values()
     )
       .sort((a, b) => {
         const aDate = new Date(a.date);
@@ -591,6 +527,7 @@ async function fetchAllData() {
 
     results[competitor.name] = {
       ...competitor,
+      ...(xStatus ? { xStatus } : {}),
       updates: updatesToSave,
       lastUpdated: filteredData.length > 0
         ? new Date().toISOString()
@@ -618,4 +555,4 @@ if (require.main === module) {
   fetchAllData().catch(console.error);
 }
 
-module.exports = { fetchAllData };
+module.exports = { fetchAllData, buildTwitterItem, isBlockedTwitterFeed };

@@ -181,6 +181,7 @@ function selectCompetitor(name) {
 }
 
 function renderUpdates() {
+  renderXStatus();
   const container = document.getElementById('updatesList');
   container.innerHTML = '';
 
@@ -228,6 +229,38 @@ function renderUpdates() {
 
     container.appendChild(card);
   });
+}
+
+function renderXStatus() {
+  const panel = document.getElementById('xStatus');
+  const competitors = (currentCompetitor === 'all' ? getCompetitors() : [allData[currentCompetitor]])
+    .filter(competitor => competitor?.twitter);
+  panel.hidden = dataConfig.useMockData || competitors.length === 0;
+  const ok = competitors.filter(competitor => competitor.xStatus?.state === 'ok').length;
+  const checked = competitors.filter(competitor => competitor.xStatus).length;
+  document.getElementById('xStatusSummary').textContent = checked
+    ? `X 来源状态 · 上次抓取 ${ok}/${competitors.length} 个账号取得近期内容`
+    : 'X 来源状态 · 尚未检查，请刷新动态';
+  const labels = { ok: '已取得近期内容', 'no-recent': '镜像未返回近期内容', unavailable: '暂时无法抓取' };
+  document.getElementById('xStatusList').innerHTML = competitors.map(competitor => {
+    const status = competitor.xStatus;
+    const cached = getRecentUpdates(competitor).filter(item => item.source === 'Twitter').length;
+    const notes = [];
+    if (status?.attemptedAt) notes.push(`上次尝试：${formatFetchTime(status.attemptedAt)}`);
+    if (status?.lastSuccessAt) notes.push(`最近成功：${formatFetchTime(status.lastSuccessAt)}`);
+    if (status?.latestPublishedAt) notes.push(`已获取的最新推文发布于 ${formatDate(status.latestPublishedAt)}`);
+    if (status?.state !== 'ok' && cached) notes.push(`保留 ${cached} 条近七日已获取内容`);
+    const failures = (status?.attempts || []).filter(attempt => attempt.reason);
+    if (failures.length) notes.push(failures.map(attempt => `${attempt.provider}：${attempt.reason}`).join('；'));
+    return `<div class="x-status-row">
+      <div><strong>${escapeHtml(competitor.name)}</strong><span class="x-status-label">${escapeHtml(labels[status?.state] || '尚未检查，请刷新动态')}</span></div>
+      ${notes.length ? `<p>${escapeHtml(notes.join(' · '))}</p>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function formatFetchTime(value) {
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
 function handleSearch() {

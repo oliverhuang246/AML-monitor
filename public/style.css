@@ -301,6 +301,40 @@ button {
   max-width: 1120px;
 }
 
+.x-status {
+  max-width: 1120px;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.x-status summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.x-status-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.x-status-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.x-status-row strong {
+  color: var(--text);
+}
+
+.x-status-row p {
+  margin-top: 4px;
+}
+
 .update-card {
   margin-bottom: 16px;
   padding: 22px 24px;
